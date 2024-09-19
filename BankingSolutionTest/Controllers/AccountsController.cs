@@ -1,6 +1,9 @@
-using System.Security.Principal;
 using Microsoft.AspNetCore.Mvc;
 using BankingSolutionTest.Models;
+using BankingSolutionTest.Services.Interface;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace BankingSolutionTest.Controllers
 {
@@ -8,20 +11,24 @@ namespace BankingSolutionTest.Controllers
     [Route("api/[controller]")]
     public class AccountsController : ControllerBase
     {
-        private static List<Account> accounts = new List<Account>();
+        private readonly IAccountService _accountService;
 
-               [HttpPost]
-        public IActionResult CreateAccount([FromBody] Account newAccount)
+        public AccountsController(IAccountService accountService)
         {
-            newAccount.AccountNumber = accounts.Count + 1;
-            accounts.Add(newAccount);
-            return Ok(newAccount);
+            _accountService = accountService;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> CreateAccount([FromBody] Account newAccount)
+        {
+            var createdAccount = _accountService.CreateAccount(newAccount.Balance);
+            return Ok(createdAccount);
         }
 
         [HttpGet("{accountNumber}")]
-        public IActionResult GetAccount(int accountNumber)
+        public async Task<IActionResult> GetAccount(int accountNumber)
         {
-            var account = accounts.FirstOrDefault(a => a.AccountNumber == accountNumber);
+            var account = _accountService.GetAccountByNumber(accountNumber);
             if (account == null)
             {
                 return NotFound("Account not found.");
@@ -30,27 +37,27 @@ namespace BankingSolutionTest.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetAllAccounts()
+        public async Task<IActionResult> GetAllAccounts()
         {
+            var accounts = _accountService.GetAllAccounts();
             return Ok(accounts);
         }
 
         [HttpPost("{accountNumber}/deposit")]
-        public IActionResult Deposit(int accountNumber, [FromBody] decimal amount)
+        public async Task<IActionResult> Deposit(int accountNumber, [FromBody] decimal amount)
         {
-            var account = accounts.FirstOrDefault(a => a.AccountNumber == accountNumber);
+            var account = _accountService.Deposit(accountNumber, amount);
             if (account == null)
             {
                 return NotFound("Account not found.");
             }
-            account.Balance += amount;
             return Ok(account);
         }
 
         [HttpPost("{accountNumber}/withdraw")]
-        public IActionResult Withdraw(int accountNumber, [FromBody] decimal amount)
+        public async Task<IActionResult> Withdraw(int accountNumber, [FromBody] decimal amount)
         {
-            var account = accounts.FirstOrDefault(a => a.AccountNumber == accountNumber);
+            var account = _accountService.Withdraw(accountNumber, amount);
             if (account == null)
             {
                 return NotFound("Account not found.");
@@ -59,30 +66,19 @@ namespace BankingSolutionTest.Controllers
             {
                 return BadRequest("Insufficient funds.");
             }
-            account.Balance -= amount;
             return Ok(account);
         }
 
         [HttpPost("transfer")]
-        public IActionResult Transfer([FromBody] TransferRequest transfer)
+        public async Task<IActionResult> Transfer([FromBody] TransferRequest transfer)
         {
-            var fromAccount = accounts.FirstOrDefault(a => a.AccountNumber == transfer.FromAccountNumber);
-            var toAccount = accounts.FirstOrDefault(a => a.AccountNumber == transfer.ToAccountNumber);
-
-            if (fromAccount == null || toAccount == null)
+            var success = _accountService.Transfer(transfer.FromAccountNumber, transfer.ToAccountNumber, transfer.Amount);
+            if (!success)
             {
-                return NotFound("One or both accounts not found.");
+                return BadRequest("Transfer failed. Check account details and balance.");
             }
 
-            if (fromAccount.Balance < transfer.Amount)
-            {
-                return BadRequest("Insufficient funds in the source account.");
-            }
-
-            fromAccount.Balance -= transfer.Amount;
-            toAccount.Balance += transfer.Amount;
-
-            return Ok(new { From = fromAccount, To = toAccount });
+            return Ok("Transfer successful.");
         }
     }
 }
